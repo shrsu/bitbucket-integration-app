@@ -1,0 +1,32 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: bitbucket-integration-app
+  description: Backend service for Bitbucket integration
+  links:
+    - url: https://tools.lowes.com/stash/projects/E-OP/repos/bitbucket-integration-app/browse
+      title: Repo
+      icon: FaBitbucket
+  information:
+    portfolio:
+      key: es
+    application_name: bitbucket-integration-app
+    team_name: Team EOR
+    team_DL: DL-GO-EOC-PROJECT-TEAM@lowes.com
+    CMDB: 91279
+    product_manager:
+      email_id: akash.tripathi@lowes.com
+      name: Akash Tripathi
+    sem:
+      email_id: anup.anand@lowes.com
+      name: Anup Anand
+    type: service
+    namespace: eor-ns
+    hosted_on: onprem
+  annotations:
+    jenkins.io/github-folder: 'E-OP/bitbucket-integration-app'
+spec:
+  type: service
+  lifecycle: staging
+  owner: team-eor
+  system: e-eor

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration>
+  <!--See https://docs.spring.io/spring-boot/docs/current/reference/html/howto-logging.html -->
+  <shutdownHook class="ch.qos.logback.core.hook.DefaultShutdownHook"/>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp>
+          <timeZone>UTC</timeZone>
+        </timestamp>
+        <pattern>
+          <pattern>
+            {
+            "level": "%level",
+            "traceId": "%mdc{traceId:-}",
+            "spanId": "%mdc{spanId:-}",
+            "parentId": "%mdc{parentId:-}",
+            "thread": "%thread",
+            "logger": "%logger",
+            "message": "%message",
+            "exception": "%exception"
+            }
+          </pattern>
+        </pattern>
+      </providers>
+    </encoder>
+  </appender>
+  <appender name="ASYNCSTDOUT" class="ch.qos.logback.classic.AsyncAppender">
+    <queueSize>5000</queueSize> <!-- Default is 256 -->
+    <discardingThreshold>0</discardingThreshold> <!-- Instruction to drop events
+            once the buffer reaches the max capacity. Default value is 20%.
+            20 means drop lower event when has 20% capacity remaining -->
+    <neverBlock>true</neverBlock><!-- default false. Setting it to true to
+			cause the Appender not block the application and just drop the messages -->
+    <maxFlushTime>5000</maxFlushTime> <!-- The default maximum queue flush time allowed during appender stop. If
+			the worker takes longer than this time it will exit, discarding any remaining
+			cartItems in the queue -->
+    <appender-ref ref="CONSOLE_JSON"/>
+  </appender>
+
+  <logger name="org.springframework.web" level="INFO"/>
+
+  <root level="INFO">
+    <appender-ref ref="ASYNCSTDOUT"/>
+  </root>
+
+</configuration>

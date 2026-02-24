@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: bitbucket-integration
+
+app:
+  cookies:
+    secure: false
+
+bitbucket:
+  api:
+    base-url: "https://api.bitbucket.org/2.0"
+  workspace: "shrsu"
+  ui:
+    base-url: "https://api.bitbucket.org/2.0"
+
+mavencentral:
+  api:
+    base-url: "https://search.maven.org"
+
+artifactory:
+  api:
+    base-url: "http://localhost:8080"
+
+dependency-config:
+  dependencies:
+    # Tomcat embedded core usage across SHRSU project repositories
+    - name: tomcat-embed-core
+      group-id: org.apache.tomcat.embed
+      artifact-id: tomcat-embed-core
+      dependent-applications:
+        projects:
+          - name: SHRSU
+            applications:
+              - authentication-system
+              - blog-rest-api
+              - contact-management-system
+              - e-commerce-backend
+              - expense-tracker-api
+              - library-management-system
+              - student-management-app
+
+    # Spring Kafka usage across SHRSU project repositories
+    - name: spring-kafka
+      group-id: org.springframework.kafka
+      artifact-id: spring-kafka
+      dependent-applications:
+        projects:
+          - name: SHRSU
+            applications:
+              - authentication-system
+              - blog-rest-api
+              - contact-management-system
+              - e-commerce-backend
+              - expense-tracker-api
+
+    # MongoDB JDBC usage across SHRSU project repositories
+    - name: mongodb-jdbc
+      group-id: com.mongodb
+      artifact-id: mongodb-jdbc
+      dependent-applications:
+        projects:
+          - name: SHRSU
+            applications:
+              - authentication-system
+              - blog-rest-api
+              - contact-management-system
+              - e-commerce-backend
+              - expense-tracker-api
+              - library-management-system
