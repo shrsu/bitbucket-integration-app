@@ -34,14 +34,6 @@ public class ErrorUtils {
         }
       }
 
-      // Bitbucket Server / other format: { "errors": [ { "message": "..." } ] }
-      if (errorJson.has("errors")) {
-        JsonNode errors = errorJson.get("errors");
-        if (errors.isArray() && !errors.isEmpty() && errors.get(0).has("message")) {
-          return errors.get(0).get("message").asText();
-        }
-      }
-
     } catch (Exception parseEx) {
       log.error("Failed to extract detailed error message from API response", parseEx);
     }
