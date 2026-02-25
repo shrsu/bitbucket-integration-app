@@ -7,33 +7,37 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(
     name = "bitbucketUiClient",
-    url = "${bitbucket.ui.base-url}",
+    url = "${bitbucket.api.base-url}",
     configuration = FeignConfig.class
 )
 public interface BitbucketUiFeignClient {
 
-  @GetMapping("/projects/{projectKey}/repos/{repoSlug}/pull-requests/{pullRequestId}/build-summaries")
-  Map<String, Object> getPullRequestBuilds(
+  /**
+   * Get commit build statuses (Bitbucket Cloud way of tracking builds).
+   * Bitbucket Cloud v2: GET /repositories/{workspace}/{repo_slug}/commit/{commit_hash}/statuses
+   */
+  @GetMapping("/repositories/{workspace}/{repoSlug}/commit/{commitHash}/statuses")
+  Map<String, Object> getCommitStatuses(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-      @PathVariable("projectKey") String projectKey,
+      @PathVariable("workspace") String workspace,
       @PathVariable("repoSlug") String repoSlug,
-      @PathVariable("pullRequestId") int pullRequestId
+      @PathVariable("commitHash") String commitHash
   );
 
-  @GetMapping("/projects/{projectKey}/repos/{repoSlug}/pull-requests/{pullRequestId}/builds")
-  Map<String, Object> getPullRequestBuildList(
+  /**
+   * List commits for a pull request.
+   * Bitbucket Cloud v2: GET /repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/commits
+   */
+  @GetMapping("/repositories/{workspace}/{repoSlug}/pullrequests/{pullRequestId}/commits")
+  Map<String, Object> getPullRequestCommits(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-      @PathVariable("projectKey") String projectKey,
+      @PathVariable("workspace") String workspace,
       @PathVariable("repoSlug") String repoSlug,
-      @PathVariable("pullRequestId") int pullRequestId,
-      @RequestHeader(HttpHeaders.ACCEPT) String acceptHeader,
-      @RequestParam("start") int start,
-      @RequestParam("limit") int limit,
-      @RequestParam("avatarSize") int avatarSize
+      @PathVariable("pullRequestId") Integer pullRequestId
   );
+
 }
 

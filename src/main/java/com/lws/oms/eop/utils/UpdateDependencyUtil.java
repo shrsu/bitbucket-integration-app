@@ -13,19 +13,34 @@ public class UpdateDependencyUtil {
     boolean isTargetDependency = false;
     boolean versionUpdated = false;
     boolean versionAlreadySame = false;
+    boolean dependencyFound = false;
+    int dependencyEndIndex = -1;
+    int artifactIdIndex = -1;
 
     for (int i = 0; i < pomContent.size(); i++) {
       String line = pomContent.get(i);
-      String trimmedLine = line.trim();
+      // Remove carriage returns and trim for parsing
+      String trimmedLine = line.replace("\r", "").trim();
 
       if (trimmedLine.startsWith("<dependency>")) {
         insideDependencyBlock = true;
         isTargetDependency = false;
+        dependencyEndIndex = -1;
+        artifactIdIndex = -1;
       }
 
-      if (insideDependencyBlock && trimmedLine.startsWith("<artifactId>") && trimmedLine.contains(dependency)) {
-        isTargetDependency = true;
-        log.info("Found target dependency: {}", dependency);
+      // More flexible matching for artifactId - handle lines like <artifactId>name</artifactId>
+      if (insideDependencyBlock && trimmedLine.startsWith("<artifactId>")) {
+        String artifactId = trimmedLine
+            .replace("<artifactId>", "")
+            .replace("</artifactId>", "")
+            .trim();
+        if (artifactId.equals(dependency)) {
+          isTargetDependency = true;
+          dependencyFound = true;
+          artifactIdIndex = i;
+          log.info("Found target dependency: {}", dependency);
+        }
       }
 
       if (insideDependencyBlock && isTargetDependency && trimmedLine.startsWith("<version>")) {
@@ -47,8 +62,21 @@ public class UpdateDependencyUtil {
         break; // Once updated, break
       }
 
-      if (trimmedLine.startsWith("</dependency>")) {
+      // Track the end of dependency block for inserting version if not present
+      if (insideDependencyBlock && trimmedLine.startsWith("</dependency>")) {
+        if (isTargetDependency && artifactIdIndex != -1 && !versionUpdated) {
+          dependencyEndIndex = i;
+          // Need to add version tag before </dependency>
+          String artifactIdLine = pomContent.get(artifactIdIndex);
+          String indentation = artifactIdLine.substring(0, artifactIdLine.indexOf("<artifactId>"));
+          String versionLine = indentation + "    <version>" + newVersion + "</version>";
+          pomContent.add(i, versionLine);
+          versionUpdated = true;
+          log.info("Added version {} for dependency {}", newVersion, dependency);
+          break;
+        }
         insideDependencyBlock = false;
+        isTargetDependency = false;
       }
     }
 
@@ -59,9 +87,12 @@ public class UpdateDependencyUtil {
     } else if (versionUpdated) {
       response.put("status", "success");
       response.put("message", "Dependency version updated successfully. Please verify it before committing.");
-    } else {
+    } else if (!dependencyFound) {
       response.put("status", "failure");
       response.put("message", "Dependency not found in POM file. Please check the file manually.");
+    } else {
+      response.put("status", "failure");
+      response.put("message", "Dependency found but could not update version.");
     }
 
     return response;

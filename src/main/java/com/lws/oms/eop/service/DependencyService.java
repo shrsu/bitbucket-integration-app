@@ -46,8 +46,10 @@ public class DependencyService {
             Object version = doc.get("v");
             Object timestamp = doc.get("timestamp");
             if (version != null && timestamp instanceof Number) {
+              String versionStr = version.toString();
               versionsList.add(Map.of(
                   "version", version,
+                  "name", versionStr,
                   "lastModified", ((Number) timestamp).longValue()
               ));
             }

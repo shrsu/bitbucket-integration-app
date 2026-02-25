@@ -6,8 +6,8 @@ import com.lws.oms.eop.feign.BitbucketUiFeignClient;
 import com.lws.oms.eop.model.PrInfo;
 import com.lws.oms.eop.model.RepositoryInfo;
 import java.util.ArrayList;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -39,6 +39,7 @@ public class BitbucketApiService {
   public Map<String, Object> retrieveBranches(RepositoryInfo repository, String authHeader) {
     log.info("Fetching branches for repository: {} in project: {}",
         repository.getRepoSlug(), repository.getProjectName());
+    log.debug("GetBranches request - workspace: {}, repoSlug: {}", workspace, repository.getRepoSlug());
 
     try {
       Map<String, Object> response = bitbucketFeignClient.getBranches(
@@ -47,6 +48,7 @@ public class BitbucketApiService {
           repository.getRepoSlug());
       log.info("Successfully fetched branches for repository: {} in project: {}",
           repository.getRepoSlug(), repository.getProjectName());
+      log.debug("GetBranches response: {}", response);
       return response;
     } catch (Exception ex) {
       log.error("Error fetching branches for repository {} in project {}: {}",
@@ -63,7 +65,11 @@ public class BitbucketApiService {
 
     log.info("Creating branch: {} in repo: {} from start point: {}", branchName, repoInfo.getRepoSlug(), startPoint);
 
-    Map<String, String> requestBody = Map.of("name", branchName, "startPoint", startPoint);
+    Map<String, Object> requestBody = new HashMap<>();
+    requestBody.put("name", branchName);
+    Map<String, Object> target = new HashMap<>();
+    target.put("hash", startPoint);
+    requestBody.put("target", target);
 
     try {
       Map<String, Object> response = bitbucketFeignClient.createBranch(
@@ -84,7 +90,7 @@ public class BitbucketApiService {
     log.info("Fetching applications for project: {}", projectName);
 
     List<String> allApplications = new ArrayList<>();
-    int start = 0;
+    int page = 1;
     boolean isLastPage = false;
 
     try {
@@ -93,7 +99,7 @@ public class BitbucketApiService {
         Map<String, Object> response = bitbucketFeignClient.getRepositories(
             authHeader,
             workspace,
-            start,
+            page,
             query
         );
 
@@ -108,7 +114,7 @@ public class BitbucketApiService {
 
         isLastPage = (Boolean) response.getOrDefault("isLastPage", true);
         if (!isLastPage && response.containsKey("nextPageStart")) {
-          start = (Integer) response.get("nextPageStart");
+          page = (Integer) response.get("nextPageStart");
         }
       }
 
@@ -127,12 +133,21 @@ public class BitbucketApiService {
 
     log.info("Creating pull request from: {} to: {}", prInfo.getFromBranch(), prInfo.getToBranch());
 
-    Map<String, Object> requestBody = Map.of(
-        "title", prInfo.getTitle(),
-        "description", prInfo.getDescription(),
-        "fromRef", Map.of("id", "refs/heads/" + prInfo.getFromBranch()),
-        "toRef", Map.of("id", "refs/heads/" + prInfo.getToBranch())
-    );
+    Map<String, Object> sourceBranch = new HashMap<>();
+    sourceBranch.put("name", prInfo.getFromBranch());
+    Map<String, Object> source = new HashMap<>();
+    source.put("branch", sourceBranch);
+
+    Map<String, Object> destBranch = new HashMap<>();
+    destBranch.put("name", prInfo.getToBranch());
+    Map<String, Object> destination = new HashMap<>();
+    destination.put("branch", destBranch);
+
+    Map<String, Object> requestBody = new HashMap<>();
+    requestBody.put("title", prInfo.getTitle());
+    requestBody.put("description", prInfo.getDescription());
+    requestBody.put("source", source);
+    requestBody.put("destination", destination);
 
     try {
       Map<String, Object> response = bitbucketFeignClient.createPullRequest(
@@ -163,6 +178,10 @@ public class BitbucketApiService {
 
       List<Map<String, Object>> branches = (List<Map<String, Object>>) response.get("values");
 
+      if (branches == null) {
+        throw new CustomApiException("No branches found in repository");
+      }
+
       for (Map<String, Object> branch : branches) {
         String name = (String) branch.get("name");
         if (branchName.equals(name)) {
@@ -189,20 +208,18 @@ public class BitbucketApiService {
       String commitMessage,
       String branchName,
       String authHeader,
-      String ticketNumber,
       String sourceCommitId) {
 
     log.info("Creating commit for file: {} with commit message: {}", filePath, commitMessage);
 
     try {
       String contentString = String.join("\n", content) + "\n";
-      String fullMessage = ticketNumber + ": " + commitMessage;
 
       return bitbucketFeignClient.createCommit(
           authHeader,
           workspace,
           repoInfo.getRepoSlug(),
-          fullMessage,
+          commitMessage,
           branchName,
           filePath,
           contentString
@@ -242,39 +259,26 @@ public class BitbucketApiService {
 
     log.info("Fetching content for file: {} at commit: {} in repo: {}", filePath, commit, repoInfo.getRepoSlug());
 
-    List<String> allLines = new ArrayList<>();
-    int start = 0;
-    boolean isLastPage = false;
-
     try {
-      while (!isLastPage) {
-        Map<String, Object> response = bitbucketFeignClient.getFileContent(
-            authHeader,
-            workspace,
-            repoInfo.getRepoSlug(),
-            commit,
-            filePath,
-            start
-        );
+      String content = bitbucketFeignClient.getFileContent(
+          authHeader,
+          workspace,
+          repoInfo.getRepoSlug(),
+          commit,
+          filePath,
+          1
+      );
 
-        if (response.containsKey("lines")) {
-          List<Map<String, String>> lines = (List<Map<String, String>>) response.get("lines");
-          for (Map<String, String> line : lines) {
-            String text = line.get("text");
-            if (text != null) {
-              allLines.add(text);
-            }
-          }
-        }
-
-        isLastPage = (boolean) response.getOrDefault("isLastPage", true);
-        if (!isLastPage && response.containsKey("nextPageStart")) {
-          start = (int) response.get("nextPageStart");
+      List<String> lines = new ArrayList<>();
+      if (content != null && !content.isEmpty()) {
+        String[] splitLines = content.split("\r?\n");
+        for (String line : splitLines) {
+          lines.add(line);
         }
       }
 
       log.info("Successfully fetched content for file: {} at commit: {} in repo: {}", filePath, commit, repoInfo.getRepoSlug());
-      return allLines;
+      return lines;
 
     } catch (Exception ex) {
       log.error("Unexpected error fetching file content from repo {}: {}", repoInfo.getRepoSlug(), ex.getMessage(), ex);
@@ -282,60 +286,84 @@ public class BitbucketApiService {
     }
   }
 
-  public Map<String, Object> getPullRequestBuilds(
+  public Map<String, Object> getCommitBuildStatuses(
       RepositoryInfo repoInfo,
-      int pullRequestId,
+      String commitHash,
       String authHeader) {
 
-    log.info("Fetching build summaries for PR ID: {} in repo: {} under project: {}",
-        pullRequestId, repoInfo.getRepoSlug(), repoInfo.getProjectName());
+    log.info("Fetching build statuses for commit: {} in repo: {}", commitHash, repoInfo.getRepoSlug());
 
     try {
-      Map<String, Object> response = bitbucketUiFeignClient.getPullRequestBuilds(
+      Map<String, Object> response = bitbucketUiFeignClient.getCommitStatuses(
           authHeader,
-          repoInfo.getProjectName(),
+          workspace,
           repoInfo.getRepoSlug(),
-          pullRequestId
+          commitHash
       );
 
-      log.info("Successfully fetched build summaries for PR ID: {}", pullRequestId);
+      log.info("Successfully fetched build statuses for commit: {} in repo: {}", commitHash, repoInfo.getRepoSlug());
       return response;
 
     } catch (Exception ex) {
-      log.error("Failed to fetch build summaries for PR ID {} in repo {}: {}",
-          pullRequestId, repoInfo.getRepoSlug(), ex.getMessage(), ex);
+      log.error("Failed to fetch build statuses for commit {} in repo {}: {}",
+          commitHash, repoInfo.getRepoSlug(), ex.getMessage(), ex);
       throw ex;
     }
   }
 
-  public Map<String, Object> getPullRequestBuildList(
+  /**
+   * Resolve the latest commit hash for a given pull request.
+   */
+  public String getLatestCommitHashForPullRequest(
       RepositoryInfo repoInfo,
-      int pullRequestId,
-      int start,
-      int limit,
-      int avatarSize,
+      Integer pullRequestId,
       String authHeader) {
 
-    log.info("Fetching detailed build list for PR ID: {} in repo: {} under project: {}",
-        pullRequestId, repoInfo.getRepoSlug(), repoInfo.getProjectName());
+    log.info(
+        "Fetching latest commit hash for pull request {} in repo {}",
+        pullRequestId,
+        repoInfo.getRepoSlug()
+    );
 
     try {
-      Map<String, Object> response = bitbucketUiFeignClient.getPullRequestBuildList(
+      Map<String, Object> response = bitbucketUiFeignClient.getPullRequestCommits(
           authHeader,
-          repoInfo.getProjectName(),
+          workspace,
           repoInfo.getRepoSlug(),
-          pullRequestId,
-          MediaType.APPLICATION_JSON_VALUE,
-          start,
-          limit,
-          avatarSize
+          pullRequestId
       );
 
-      log.info("Successfully fetched build list for PR ID: {}", pullRequestId);
-      return response;
+      List<Map<String, Object>> commits = (List<Map<String, Object>>) response.get("values");
+      if (commits == null || commits.isEmpty()) {
+        throw new CustomApiException(
+            "No commits found for pull request " + pullRequestId + " in repo " + repoInfo.getRepoSlug()
+        );
+      }
 
+      // Bitbucket returns commits in reverse chronological order; take the first as "latest".
+      Map<String, Object> latestCommit = commits.get(0);
+      String hash = (String) latestCommit.get("hash");
+      if (hash == null || hash.isBlank()) {
+        throw new CustomApiException(
+            "Latest commit for pull request " + pullRequestId + " is missing a hash"
+        );
+      }
+
+      log.info(
+          "Resolved latest commit hash {} for pull request {} in repo {}",
+          hash,
+          pullRequestId,
+          repoInfo.getRepoSlug()
+      );
+      return hash;
     } catch (Exception ex) {
-      log.error("Failed to fetch build list for PR ID {} in repo {}: {}", pullRequestId, repoInfo.getRepoSlug(), ex.getMessage(), ex);
+      log.error(
+          "Failed to resolve latest commit for pull request {} in repo {}: {}",
+          pullRequestId,
+          repoInfo.getRepoSlug(),
+          ex.getMessage(),
+          ex
+      );
       throw ex;
     }
   }

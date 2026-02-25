@@ -263,6 +263,37 @@ public class BitbucketApiController {
     return ResponseEntity.ok(response);
   }
 
+  @PostMapping("/getCommitBuildStatuses")
+  public ResponseEntity<Map<String, Object>> getCommitBuildStatuses(
+      @CookieValue(value = "auth_token", required = false) String authToken,
+      @Valid @RequestBody GetBuildsRequest request,
+      BindingResult bindingResult) {
+
+    ResponseEntity<Map<String, Object>> validationResponse = handleValidationErrors(bindingResult);
+    if (validationResponse != null) {
+      return validationResponse;
+    }
+
+    Map<String, Object> response = new HashMap<>();
+    try {
+      List<CompletableFuture<Map<String, Object>>> futures = request.getRequestItems().stream()
+          .map(item -> bitbucketIntegrationService.getCommitBuildStatusesAsync(item.getRepository(), item.getCommitHash(), "Basic " + authToken))
+          .toList();
+
+      List<Map<String, Object>> buildStatuses = futures.stream()
+          .map(CompletableFuture::join)
+          .collect(Collectors.toList());
+
+      response.put("commitBuildStatuses", buildStatuses);
+      return ResponseEntity.ok(response);
+
+    } catch (Exception e) {
+      response.put("message", "An unexpected error occurred while fetching build statuses: " + e.getMessage());
+      log.error("Unexpected error occurred while fetching build statuses for commits: {}", e.getMessage(), e);
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+  }
+
   @PostMapping("/getPullRequestBuilds")
   public ResponseEntity<Map<String, Object>> getPullRequestBuilds(
       @CookieValue(value = "auth_token", required = false) String authToken,
@@ -277,56 +308,22 @@ public class BitbucketApiController {
     Map<String, Object> response = new HashMap<>();
     try {
       List<CompletableFuture<Map<String, Object>>> futures = request.getRequestItems().stream()
-          .map(item -> bitbucketIntegrationService.getPullRequestBuildsAsync(item.getRepository(), item.getPrId(), "Basic " + authToken))
+          .map(item -> bitbucketIntegrationService.getPullRequestBuildStatusesAsync(
+              item,
+              "Basic " + authToken
+          ))
           .toList();
 
-      List<Map<String, Object>> builds = futures.stream()
+      List<Map<String, Object>> buildResults = futures.stream()
           .map(CompletableFuture::join)
           .collect(Collectors.toList());
 
-      response.put("pullRequestBuilds", builds);
+      response.put("pullRequestBuilds", buildResults);
       return ResponseEntity.ok(response);
-
     } catch (Exception e) {
-      response.put("message", "An unexpected error occurred while fetching builds: " + e.getMessage());
-      log.error("Unexpected error occurred while fetching builds for PRs: {}", e.getMessage(), e);
-      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-    }
-  }
-
-  @PostMapping("/getPullRequestBuildLists")
-  public ResponseEntity<Map<String, Object>> getPullRequestBuildLists(
-      @CookieValue(value = "auth_token", required = false) String authToken,
-      @Valid @RequestBody GetBuildsRequest request,
-      BindingResult bindingResult) {
-
-    ResponseEntity<Map<String, Object>> validationResponse = handleValidationErrors(bindingResult);
-    if (validationResponse != null) {
-      return validationResponse;
-    }
-
-    Map<String, Object> response = new HashMap<>();
-    try {
-      List<CompletableFuture<Map<String, Object>>> futures = request.getRequestItems().stream()
-          .map(item -> bitbucketIntegrationService.getPullRequestBuildListAsync(
-              item.getRepository(),
-              item.getPrId(),
-              item.getStart() != null ? item.getStart() : 0,
-              item.getLimit() != null ? item.getLimit() : 25,
-              item.getAvatarSize() != null ? item.getAvatarSize() : 48,
-              "Basic " + authToken))
-          .toList();
-
-      List<Map<String, Object>> results = futures.stream()
-          .map(CompletableFuture::join)
-          .collect(Collectors.toList());
-
-      response.put("pullRequestBuildLists", results);
-      return ResponseEntity.ok(response);
-
-    } catch (Exception e) {
-      response.put("message", "An unexpected error occurred while fetching detailed build lists: " + e.getMessage());
-      log.error("Error occurred in getPullRequestBuildLists: {}", e.getMessage(), e);
+      response.put("message",
+          "An unexpected error occurred while fetching pull request build statuses: " + e.getMessage());
+      log.error("Unexpected error occurred while fetching pull request build statuses: {}", e.getMessage(), e);
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
   }

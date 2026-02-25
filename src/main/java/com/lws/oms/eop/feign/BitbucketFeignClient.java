@@ -2,6 +2,8 @@ package com.lws.oms.eop.feign;
 
 import com.lws.oms.eop.config.FeignConfig;
 import java.util.Map;
+
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,7 +50,7 @@ public interface BitbucketFeignClient {
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @PathVariable("workspace") String workspace,
       @PathVariable("repoSlug") String repoSlug,
-      @RequestBody Map<String, String> branchInfo
+      @RequestBody Map<String, Object> branchInfo
   );
 
   /**
@@ -81,7 +83,7 @@ public interface BitbucketFeignClient {
    * Bitbucket Cloud v2: /2.0/repositories/{workspace}/{repo_slug}/src/{commit}/{path}
    */
   @GetMapping("/repositories/{workspace}/{repoSlug}/src/{commit}/{filePath}")
-  Map<String, Object> getFileContent(
+  String getFileContent(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @PathVariable("workspace") String workspace,
       @PathVariable("repoSlug") String repoSlug,

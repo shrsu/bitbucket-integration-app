@@ -5,16 +5,15 @@ import static com.lws.oms.eop.utils.ErrorUtils.extractMeaningfulErrorMessage;
 import com.lws.oms.eop.exception.CustomApiException;
 import com.lws.oms.eop.model.CommitInfo;
 import com.lws.oms.eop.model.FileInfo;
+import com.lws.oms.eop.model.PrBuildRequestItem;
 import com.lws.oms.eop.model.PrInfo;
 import com.lws.oms.eop.model.RepositoryInfo;
 import com.lws.oms.eop.model.requests.CommitRequest;
 import com.lws.oms.eop.model.requests.UpdateDependencyVersionRequest;
 import com.lws.oms.eop.utils.UpdateDependencyUtil;
 import feign.FeignException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +39,25 @@ public class BitBucketIntegrationService {
     try {
       Map<String, Object> branchData = bitbucketApiService.retrieveBranches(repositoryInfo, authHeader);
       branchResponse.put("status", "success");
-      branchResponse.put("branches", branchData.get("values"));
+
+      List<Map<String, Object>> branches = (List<Map<String, Object>>) branchData.get("values");
+      List<Map<String, Object>> formattedBranches = new ArrayList<>();
+
+      if (branches != null) {
+        for (Map<String, Object> branch : branches) {
+          Map<String, Object> formattedBranch = new HashMap<>();
+          formattedBranch.put("name", branch.get("name"));
+
+          Map<String, Object> target = (Map<String, Object>) branch.get("target");
+          if (target != null) {
+            formattedBranch.put("latestCommit", target.get("hash"));
+          }
+
+          formattedBranches.add(formattedBranch);
+        }
+      }
+
+      branchResponse.put("branches", formattedBranches);
     } catch (FeignException e) {
       branchResponse.put("status", "error");
       branchResponse.put("error", extractMeaningfulErrorMessage(e));
@@ -205,7 +222,6 @@ public class BitBucketIntegrationService {
           commitInfo.getCommitMessage(),
           commitRequest.getBranch(),
           authHeader,
-          commitRequest.getTicketNumber(),
           latestCommit
       );
 
@@ -275,77 +291,127 @@ public class BitBucketIntegrationService {
       updateResponse.put("status", "error");
       updateResponse.put("error", "Error updating dependency version: " + e.getMessage());
     } catch (Exception e) {
+      log.error("Unexpected error updating dependency version for repo {}: {}", repoInfo.getRepoSlug(), e.getMessage(), e);
       updateResponse.put("status", "error");
-      updateResponse.put("error", "Error updating dependency version: Internal Server Error");
+      updateResponse.put("error", "Error updating dependency version: " + e.getMessage());
     }
 
     return CompletableFuture.completedFuture(updateResponse);
   }
 
   @Async("taskExecutor")
-  public CompletableFuture<Map<String, Object>> getPullRequestBuildsAsync(
+  public CompletableFuture<Map<String, Object>> getCommitBuildStatusesAsync(
       RepositoryInfo repositoryInfo,
-      int pullRequestId,
+      String commitHash,
       String authHeader) {
 
     Map<String, Object> result = new HashMap<>();
     result.put("projectName", repositoryInfo.getProjectName());
     result.put("repoSlug", repositoryInfo.getRepoSlug());
-    result.put("prId", pullRequestId);
+    result.put("commitHash", commitHash);
 
     try {
-      Map<String, Object> buildData = bitbucketApiService.getPullRequestBuilds(
+      Map<String, Object> buildStatuses = bitbucketApiService.getCommitBuildStatuses(
           repositoryInfo,
-          pullRequestId,
+          commitHash,
           authHeader
       );
-      result.put("buildData", buildData);
+      result.put("buildStatuses", buildStatuses);
       result.put("status", "success");
     } catch (FeignException e) {
       result.put("status", "error");
       result.put("error", extractMeaningfulErrorMessage(e));
     } catch (Exception e) {
       result.put("status", "error");
-      result.put("error", "Failed to fetch build data: Internal Server Error");
+      result.put("error", "Failed to fetch build statuses: " + e.getMessage());
     }
 
     return CompletableFuture.completedFuture(result);
   }
 
   @Async("taskExecutor")
-  public CompletableFuture<Map<String, Object>> getPullRequestBuildListAsync(
-      RepositoryInfo repositoryInfo,
-      int pullRequestId,
-      int start,
-      int limit,
-      int avatarSize,
+  public CompletableFuture<Map<String, Object>> getPullRequestBuildStatusesAsync(
+      PrBuildRequestItem requestItem,
       String authHeader) {
 
     Map<String, Object> result = new HashMap<>();
+    RepositoryInfo repositoryInfo = requestItem.getRepository();
+
     result.put("projectName", repositoryInfo.getProjectName());
     result.put("repoSlug", repositoryInfo.getRepoSlug());
-    result.put("prId", pullRequestId);
 
     try {
-      Map<String, Object> buildList = bitbucketApiService.getPullRequestBuildList(
+      String effectiveCommitHash = requestItem.getCommitHash();
+      if (effectiveCommitHash == null || effectiveCommitHash.isBlank()) {
+        effectiveCommitHash = bitbucketApiService.getLatestCommitHashForPullRequest(
+            repositoryInfo,
+            requestItem.getPrId(),
+            authHeader
+        );
+      }
+
+      Map<String, Object> statuses = bitbucketApiService.getCommitBuildStatuses(
           repositoryInfo,
-          pullRequestId,
-          start,
-          limit,
-          avatarSize,
+          effectiveCommitHash,
           authHeader
       );
-      result.put("buildList", buildList);
+
+      Map<String, Object> metrics = buildMetricsFromStatuses(statuses);
+
+      Map<String, Object> buildData = new HashMap<>();
+      buildData.put(effectiveCommitHash, metrics);
+
+      result.put("buildData", buildData);
       result.put("status", "success");
-    } catch (FeignException e) {
-      result.put("status", "error");
-      result.put("error", extractMeaningfulErrorMessage(e));
     } catch (Exception e) {
       result.put("status", "error");
-      result.put("error", "Failed to fetch build list: Internal Server Error");
+      result.put("error", "Failed to fetch pull request build statuses: " + e.getMessage());
     }
 
     return CompletableFuture.completedFuture(result);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> buildMetricsFromStatuses(Map<String, Object> statusesResponse) {
+    Map<String, Object> metrics = new HashMap<>();
+    int cancelled = 0;
+    int successful = 0;
+    int inProgress = 0;
+    int failed = 0;
+    int unknown = 0;
+
+    if (statusesResponse != null) {
+      Object valuesObj = statusesResponse.get("values");
+      if (valuesObj instanceof List<?>) {
+        for (Object o : (List<?>) valuesObj) {
+          if (!(o instanceof Map<?, ?>)) {
+            continue;
+          }
+          Map<String, Object> status = (Map<String, Object>) o;
+          Object stateObj = status.get("state");
+          if (!(stateObj instanceof String)) {
+            unknown++;
+            continue;
+          }
+          String state = ((String) stateObj).toUpperCase();
+          switch (state) {
+            case "SUCCESSFUL" -> successful++;
+            case "FAILED" -> failed++;
+            case "INPROGRESS" -> inProgress++;
+            case "STOPPED", "CANCELLED" -> cancelled++;
+            default -> unknown++;
+          }
+        }
+      }
+    }
+
+    metrics.put("cancelled", cancelled);
+    metrics.put("successful", successful);
+    metrics.put("inProgress", inProgress);
+    metrics.put("failed", failed);
+    metrics.put("unknown", unknown);
+
+    return metrics;
   }
 
 }

@@ -12,10 +12,10 @@ public class CommitRequest {
   @NotNull(message = "Commit Information List cannot be null")
   private List<CommitInfo> commitInfoList;
 
-  @NotBlank(message = "Branch name cannot be blank")
-  private String branch;
-
   @NotBlank(message = "Ticket number cannot be blank")
   private String ticketNumber;
+
+  @NotBlank(message = "Branch name cannot be blank")
+  private String branch;
 
 }

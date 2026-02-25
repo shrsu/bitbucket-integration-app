@@ -16,6 +16,8 @@ public class PrBuildRequestItem {
   @NotNull(message = "Pull request ID must be provided")
   private Integer prId;
 
+  private String commitHash;
+
   private Integer start;
   private Integer limit;
   private Integer avatarSize;

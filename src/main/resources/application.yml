@@ -11,7 +11,7 @@ bitbucket:
     base-url: "https://api.bitbucket.org/2.0"
   workspace: "shrsu"
   ui:
-    base-url: "https://api.bitbucket.org/2.0"
+    base-url: "https://bitbucket.org/!api/"
 
 mavencentral:
   api:
@@ -53,9 +53,9 @@ dependency-config:
               - e-commerce-backend
               - expense-tracker-api
 
-    # MongoDB JDBC usage across SHRSU project repositories
+    # MongoDB JDBC usage across SHRSU project repositories (Maven Central: org.mongodb:mongodb-jdbc)
     - name: mongodb-jdbc
-      group-id: com.mongodb
+      group-id: org.mongodb
       artifact-id: mongodb-jdbc
       dependent-applications:
         projects:
