@@ -26,12 +26,22 @@ public class ErrorUtils {
       String jsonString = errorResponse.substring(jsonStart, jsonEnd + 1);
       JsonNode errorJson = objectMapper.readTree(jsonString);
 
+      // Bitbucket Cloud format: { "error": { "message": "...", "code": "..." } }
+      if (errorJson.has("error")) {
+        JsonNode errorNode = errorJson.get("error");
+        if (errorNode.has("message") && !errorNode.get("message").asText().isBlank()) {
+          return errorNode.get("message").asText();
+        }
+      }
+
+      // Bitbucket Server / other format: { "errors": [ { "message": "..." } ] }
       if (errorJson.has("errors")) {
         JsonNode errors = errorJson.get("errors");
         if (errors.isArray() && !errors.isEmpty() && errors.get(0).has("message")) {
           return errors.get(0).get("message").asText();
         }
       }
+
     } catch (Exception parseEx) {
       log.error("Failed to extract detailed error message from API response", parseEx);
     }

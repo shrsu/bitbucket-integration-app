@@ -268,12 +268,15 @@ public class BitBucketIntegrationService {
           ""
       );
 
-      List<String> pomContent = bitbucketApiService.getFileContent(
+      // Preserve original EOL style when reading pom.xml
+      var pomWithEol = bitbucketApiService.getFileContentWithEol(
           repoInfo,
           latestCommit,
           pomPath,
           authHeader
       );
+
+      List<String> pomContent = pomWithEol.getLines();
 
       Map<String, Object> updateResult = UpdateDependencyUtil.updateDependencyVersionInPom(
           pomContent,
@@ -283,6 +286,7 @@ public class BitBucketIntegrationService {
 
       updateResponse.put("status", updateResult.get("status"));
       updateResponse.put("message", updateResult.get("message"));
+      updateResponse.put("eol", pomWithEol.getEol());
       updateResponse.put("pomContent", pomContent);
     } catch (FeignException e) {
       updateResponse.put("status", "error");

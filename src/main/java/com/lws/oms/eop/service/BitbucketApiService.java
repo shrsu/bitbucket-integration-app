@@ -15,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 @Service
 @Slf4j
@@ -74,7 +76,7 @@ public class BitbucketApiService {
     try {
       Map<String, Object> response = bitbucketFeignClient.createBranch(
           authHeader,
-          repoInfo.getProjectName(),
+          workspace,
           repoInfo.getRepoSlug(),
           requestBody
       );
@@ -201,6 +203,67 @@ public class BitbucketApiService {
     }
   }
 
+  public static final class FileContentWithEol {
+    private final List<String> lines;
+    private final String eol;
+
+    private FileContentWithEol(List<String> lines, String eol) {
+      this.lines = lines;
+      this.eol = eol;
+    }
+
+    public List<String> getLines() {
+      return lines;
+    }
+
+    public String getEol() {
+      return eol;
+    }
+  }
+
+  public FileContentWithEol getFileContentWithEol(
+      RepositoryInfo repoInfo,
+      String commit,
+      String filePath,
+      String authHeader) {
+
+    log.info("Fetching content (with EOL) for file: {} at commit: {} in repo: {}",
+        filePath, commit, repoInfo.getRepoSlug());
+
+    try {
+      String content = bitbucketFeignClient.getFileContent(
+          authHeader,
+          workspace,
+          repoInfo.getRepoSlug(),
+          commit,
+          filePath,
+          1
+      );
+
+      String eol;
+      if (content != null && content.contains("\r\n")) {
+        eol = "\r\n";
+      } else {
+        eol = "\n";
+      }
+
+      List<String> lines = new ArrayList<>();
+      if (content != null && !content.isEmpty()) {
+        String[] splitLines = content.split("\r?\n", -1);
+        for (String line : splitLines) {
+          lines.add(line);
+        }
+      }
+
+      return new FileContentWithEol(lines, eol);
+
+    } catch (Exception ex) {
+      log.error("Unexpected error fetching file content from repo {}: {}", repoInfo.getRepoSlug(),
+          ex.getMessage(), ex);
+      throw ex;
+    }
+  }
+
   public Map<String, Object> createCommit(
       RepositoryInfo repoInfo,
       String filePath,
@@ -215,14 +278,19 @@ public class BitbucketApiService {
     try {
       String contentString = String.join("\n", content) + "\n";
 
+      // Bitbucket Cloud /src API requires the file path AS the form field name.
+      // e.g. { "message": "...", "branch": "...", "pom.xml": "<file content>" }
+      // SpringFormEncoder supports MultiValueMap natively for multipart/form-data.
+      MultiValueMap<String, Object> formParts = new LinkedMultiValueMap<>();
+      formParts.add("message", commitMessage);
+      formParts.add("branch", branchName);
+      formParts.add(filePath, contentString);  // key = actual file path
+
       return bitbucketFeignClient.createCommit(
           authHeader,
           workspace,
           repoInfo.getRepoSlug(),
-          commitMessage,
-          branchName,
-          filePath,
-          contentString
+          formParts
       );
 
     } catch (Exception ex) {
@@ -257,33 +325,7 @@ public class BitbucketApiService {
       String filePath,
       String authHeader) {
 
-    log.info("Fetching content for file: {} at commit: {} in repo: {}", filePath, commit, repoInfo.getRepoSlug());
-
-    try {
-      String content = bitbucketFeignClient.getFileContent(
-          authHeader,
-          workspace,
-          repoInfo.getRepoSlug(),
-          commit,
-          filePath,
-          1
-      );
-
-      List<String> lines = new ArrayList<>();
-      if (content != null && !content.isEmpty()) {
-        String[] splitLines = content.split("\r?\n");
-        for (String line : splitLines) {
-          lines.add(line);
-        }
-      }
-
-      log.info("Successfully fetched content for file: {} at commit: {} in repo: {}", filePath, commit, repoInfo.getRepoSlug());
-      return lines;
-
-    } catch (Exception ex) {
-      log.error("Unexpected error fetching file content from repo {}: {}", repoInfo.getRepoSlug(), ex.getMessage(), ex);
-      throw ex;
-    }
+    return getFileContentWithEol(repoInfo, commit, filePath, authHeader).getLines();
   }
 
   public Map<String, Object> getCommitBuildStatuses(

@@ -3,9 +3,9 @@ package com.lws.oms.eop.feign;
 import com.lws.oms.eop.config.FeignConfig;
 import java.util.Map;
 
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.HttpHeaders;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -95,6 +95,13 @@ public interface BitbucketFeignClient {
   /**
    * Create a commit by posting file content in Bitbucket Cloud.
    * Bitbucket Cloud v2: POST /2.0/repositories/{workspace}/{repo_slug}/src
+   *
+   * The formParts MultiValueMap MUST contain:
+   *   - "message"      → commit message string
+   *   - "branch"       → target branch name
+   *   - "<file-path>" → the file content (key = the actual file path, e.g. "pom.xml")
+   *
+   * SpringFormEncoder natively supports MultiValueMap for multipart/form-data.
    */
   @PostMapping(
       value = "/repositories/{workspace}/{repoSlug}/src",
@@ -104,10 +111,7 @@ public interface BitbucketFeignClient {
       @RequestHeader("Authorization") String authHeader,
       @PathVariable("workspace") String workspace,
       @PathVariable("repoSlug") String repoSlug,
-      @RequestPart("message") String message,
-      @RequestPart("branch") String branch,
-      @RequestPart("path") String filePath,
-      @RequestPart("content") String content
+      @RequestBody MultiValueMap<String, Object> formParts
   );
 
 }
